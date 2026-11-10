@@ -146,7 +146,11 @@ const adminUsername = process.env.ADMIN_USERNAME || 'admin';
 if (!db.prepare("SELECT id FROM users WHERE role = 'admin' LIMIT 1").get()) {
   const adminPassword = process.env.ADMIN_PASSWORD || crypto.randomBytes(18).toString('base64url');
   db.prepare('INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)').run(adminUsername, bcrypt.hashSync(adminPassword, 12), 'admin');
-  console.log(`Acesso inicial do administrador: usuário "${adminUsername}" e senha "${adminPassword}". Altere a senha no painel.`);
+  if (process.env.ADMIN_PASSWORD) {
+    console.log(`Acesso inicial do administrador criado para "${adminUsername}" com a senha definida na configuração do serviço.`);
+  } else {
+    console.log(`Acesso inicial do administrador: usuário "${adminUsername}" e senha "${adminPassword}". Altere a senha no painel.`);
+  }
 }
 
 app.set('trust proxy', 1);

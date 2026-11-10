@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: calendario-advento
+    runtime: node
+    plan: 0.5c-512mb
+    region: ohio
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /api/session
+    autoDeployTrigger: commit
+    disk:
+      name: calendario-advento-data
+      mountPath: /var/data
+      sizeGB: 5
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: ADMIN_USERNAME
+        value: admin
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: DATA_DIR
+        value: /var/data
+      - key: UPLOAD_DIR
+        value: /var/data/uploads

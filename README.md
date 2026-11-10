@@ -28,19 +28,17 @@ O endereço do painel é `/painel-natal-admin` e não aparece como link na tela 
 
 Os dados, sessões e progresso ficam em `data/advento.sqlite`; a chave local que mantém as sessões assinadas fica em `data/session-secret`; arquivos enviados ficam em `uploads/`. Não apague esses diretórios para manter os conteúdos, as contas e o progresso. Eles são ignorados pelo Git.
 
-## Publicar no Render ou Railway
+## Publicar no Render
 
-O app precisa de um serviço Node.js com disco persistente. O SQLite e os arquivos locais não devem ficar em armazenamento efêmero nem ser compartilhados entre várias instâncias. Para tráfego maior ou múltiplas instâncias, use PostgreSQL e armazenamento de objetos; esta versão está configurada para SQLite em uma instância.
+O arquivo `render.yaml` prepara um serviço Node.js com disco persistente para o SQLite, sessões e arquivos enviados. O serviço com disco persistente exige um plano pago no Render; confira o preço mostrado no painel antes de confirmar. A configuração inicial usa o plano `0.5c-512mb`, um disco de 5 GB e a região Ohio. O Render fornece um endereço HTTPS `onrender.com`, que você pode usar sem comprar domínio.
 
-1. Publique o repositório em um Git privado ou público.
-2. Crie um serviço Web Node.js no Render ou Railway conectado ao repositório.
-3. Use `npm install` como comando de instalação e `npm start` como comando de início.
-4. Configure as variáveis `NODE_ENV=production`, `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `SESSION_SECRET` e `PUBLIC_URL`. Use uma senha forte e uma chave aleatória longa para `SESSION_SECRET`; não reutilize os valores de exemplo.
-5. Monte um volume persistente em `/var/data` e defina `DATA_DIR=/var/data` e `UPLOAD_DIR=/var/data/uploads`. Assim o banco, as sessões, a chave de sessão local e os arquivos enviados permanecem após novos deploys.
-6. Defina `PUBLIC_URL` como o endereço HTTPS público do site, sem barra no final. Ele é usado para criar QR Codes de músicas enviadas como arquivo.
-7. No primeiro início, confira os registros do serviço para obter a senha inicial aleatória do administrador caso não tenha definido `ADMIN_PASSWORD` antes da primeira inicialização. Depois, entre no painel e altere a senha.
+1. Entre no Render e escolha criar um Blueprint conectado ao repositório `carlosDias19/CalendarioAdvento`.
+2. Na configuração solicitada pelo Blueprint, defina `ADMIN_PASSWORD` com uma senha forte e exclusiva. A chave `SESSION_SECRET` é gerada pelo Render.
+3. Revise os recursos e custos apresentados pelo Render e confirme a criação. O Blueprint define `npm ci` para instalação, `npm start` para execução e um disco persistente em `/var/data`.
+4. Aguarde o primeiro deploy ficar ativo e abra o endereço HTTPS `onrender.com` fornecido pelo Render. O usuário inicial do painel é `admin`; a senha é a que você definiu para `ADMIN_PASSWORD`.
+5. Se tiver um domínio próprio, abra as configurações do serviço no Render, adicione o domínio personalizado e configure no provedor de DNS os registros que o Render indicar. O HTTPS é provisionado pelo Render.
 
-Não coloque `.env`, o banco de dados ou arquivos de mídia no repositório. Em hospedagens que não oferecem disco persistente, os dados locais podem ser perdidos ao reiniciar ou publicar uma nova versão.
+O `PUBLIC_URL` não é obrigatório no Render: os QR Codes usam o endereço da requisição quando a variável não está definida. O banco, as sessões e os uploads persistem no disco configurado. Não remova o disco, não rode mais de uma instância deste app com SQLite e nunca envie `.env`, o banco local ou mídia privada ao GitHub.
 
 ## Segurança e funcionamento
 
