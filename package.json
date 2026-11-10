@@ -1,0 +1,25 @@
+{
+  "name": "calendario-advento-natal",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Calendário do Advento com conteúdos diários e painel administrativo.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "csrf-sync": "^4.2.1",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.5.0",
+    "express-session": "^1.18.1",
+    "multer": "^1.4.5-lts.1",
+    "qrcode": "^1.5.4",
+    "better-sqlite3": "^11.8.1"
+  }
+}

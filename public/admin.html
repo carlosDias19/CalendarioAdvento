@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#10241e">
+  <title>Painel reservado | Calendário Advento</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600;700&family=Parisienne&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/admin.css">
+</head>
+<body class="admin-body">
+  <main class="admin-shell">
+    <section class="admin-login" id="adminLogin">
+      <p class="eyebrow">Acesso reservado</p>
+      <h1>Administração <span>Natal</span></h1>
+      <p>Entre com a conta de administrador.</p>
+      <form id="adminLoginForm">
+        <label for="adminUsername">Usuário administrador</label>
+        <input id="adminUsername" name="username" autocomplete="username" required>
+        <label for="adminPassword">Senha</label>
+        <input id="adminPassword" name="password" type="password" autocomplete="current-password" required>
+        <p class="form-error" id="adminLoginError" role="alert" aria-live="polite"></p>
+        <button class="primary-button" type="submit">Entrar no painel</button>
+      </form>
+      <a class="back-link" href="/">Voltar ao calendário</a>
+    </section>
+
+    <section class="admin-panel" id="adminPanel" hidden>
+      <header class="admin-header">
+        <div><p class="eyebrow">Calendário Advento</p><h1>Painel de administração</h1></div>
+        <button id="adminLogout" class="quiet-button" type="button">Sair <span aria-hidden="true">↗</span></button>
+      </header>
+      <nav class="admin-tabs" aria-label="Seções do painel">
+        <button class="tab-button active" data-tab="days" type="button">Conteúdos</button>
+        <button class="tab-button" data-tab="users" type="button">Usuários</button>
+        <button class="tab-button" data-tab="activity" type="button">Atividade</button>
+        <button class="tab-button" data-tab="settings" type="button">Teste e senha</button>
+      </nav>
+
+      <section class="admin-section active" id="tab-days">
+        <div class="days-layout">
+          <aside class="day-list-column">
+            <div class="section-title"><h2>25 dias</h2><span id="dayCount">25</span></div>
+            <div id="adminDayList" class="admin-day-list"></div>
+          </aside>
+          <form id="dayForm" class="editor-form">
+            <div class="editor-heading"><p class="eyebrow" id="editorDayLabel">Dia 1</p><h2>Editar conteúdo</h2></div>
+            <label for="contentType">Tipo de surpresa</label>
+            <select id="contentType" name="type">
+              <option value="verse">Versículo</option>
+              <option value="challenge">Desafio</option>
+              <option value="video">Vídeo</option>
+              <option value="music">Música</option>
+            </select>
+            <div class="field-group" id="referenceGroup"><label for="reference">Referência bíblica</label><input id="reference" name="reference" maxlength="160" placeholder="Ex.: Isaías 9:6"></div>
+            <div class="field-group" id="titleGroup"><label for="contentTitle">Título</label><input id="contentTitle" name="title" maxlength="160" placeholder="Título do desafio"></div>
+            <div class="field-group" id="textGroup"><label for="contentText">Texto</label><textarea id="contentText" name="content" rows="6" maxlength="10000"></textarea></div>
+            <div class="field-group" id="mediaGroup">
+              <label for="mediaUrl">Link de vídeo, música ou arquivo</label>
+              <input id="mediaUrl" name="media_url" type="text" placeholder="https://...">
+              <p class="help-text" id="mediaHelp">Cole um link do YouTube ou Vimeo, ou envie um MP4.</p>
+              <div class="upload-row"><input id="mediaFile" type="file" accept=".mp4,.mp3,video/mp4,audio/mpeg"><button id="uploadMedia" class="secondary-button" type="button">Enviar arquivo</button></div>
+              <div class="media-status" id="mediaStatus"></div>
+              <button id="removeMedia" class="text-button" type="button" hidden>Remover mídia enviada</button>
+            </div>
+            <p class="save-message" id="saveMessage" aria-live="polite"></p>
+            <button class="save-button" type="submit">Salvar alterações</button>
+          </form>
+        </div>
+      </section>
+
+      <section class="admin-section" id="tab-users" hidden>
+        <div class="users-layout">
+          <form id="createUserForm" class="editor-form compact-form">
+            <div class="editor-heading"><p class="eyebrow">Acesso pessoal</p><h2>Criar usuário</h2></div>
+            <label for="newUsername">Nome de usuário</label><input id="newUsername" name="username" autocomplete="off" required minlength="3" maxlength="32">
+            <label for="newUserPassword">Senha inicial</label><input id="newUserPassword" name="password" type="password" autocomplete="new-password" required minlength="8">
+            <p class="help-text">As pessoas também podem criar a própria conta na página de cadastro.</p>
+            <p class="save-message" id="userMessage" aria-live="polite"></p>
+            <button class="save-button" type="submit">Criar acesso</button>
+          </form>
+          <div class="user-list-column"><div class="section-title"><h2>Contas cadastradas</h2><span id="userCount">0</span></div><div id="userList" class="user-list"></div></div>
+        </div>
+      </section>
+
+      <section class="admin-section" id="tab-activity" hidden>
+        <div class="section-title activity-heading">
+          <div><p class="eyebrow">Acessos e progresso</p><h2>Atividade recente</h2></div>
+          <button id="refreshActivity" class="secondary-button" type="button">Atualizar</button>
+        </div>
+        <div class="activity-toolbar">
+          <label for="activityFilter">Mostrar</label>
+          <select id="activityFilter">
+            <option value="all">Todos os eventos</option>
+            <option value="login">Entradas</option>
+            <option value="open_day">Cartas abertas</option>
+          </select>
+          <span id="activityCount">0 registros</span>
+        </div>
+        <div class="activity-table-wrap">
+          <table class="activity-table">
+            <thead><tr><th>Data e hora</th><th>Usuário</th><th>Evento</th><th>Carta</th></tr></thead>
+            <tbody id="activityList"></tbody>
+          </table>
+          <p class="activity-empty" id="activityEmpty" hidden>Nenhuma atividade registrada ainda.</p>
+        </div>
+        <p class="help-text">São exibidos até 300 eventos. Os registros começam a partir da ativação desta função.</p>
+      </section>
+
+      <section class="admin-section" id="tab-settings" hidden>
+        <div class="settings-layout">
+          <form id="testModeForm" class="editor-form compact-form">
+            <div class="editor-heading"><p class="eyebrow">Prévia protegida</p><h2>Modo de teste</h2></div>
+            <label class="toggle-row" for="testMode"><span>Ativar visualização de teste</span><input id="testMode" type="checkbox"><i aria-hidden="true"></i></label>
+            <label for="testDay">Escolher dia para pré-visualizar</label>
+            <select id="testDay"></select>
+            <p class="help-text">A prévia não grava progresso e não altera as contas dos usuários.</p>
+            <button class="save-button" type="submit">Atualizar prévia</button>
+            <div class="preview-box" id="testPreview" aria-live="polite">Escolha um dia para ver o conteúdo.</div>
+          </form>
+          <form id="adminPasswordForm" class="editor-form compact-form">
+            <div class="editor-heading"><p class="eyebrow">Segurança</p><h2>Alterar minha senha</h2></div>
+            <label for="currentAdminPassword">Senha atual</label><input id="currentAdminPassword" type="password" autocomplete="current-password" required>
+            <label for="newAdminPassword">Nova senha</label><input id="newAdminPassword" type="password" autocomplete="new-password" minlength="10" required>
+            <p class="help-text">Use pelo menos 10 caracteres.</p>
+            <p class="save-message" id="passwordMessage" aria-live="polite"></p>
+            <button class="save-button" type="submit">Atualizar senha</button>
+          </form>
+        </div>
+      </section>
+      <div class="admin-toast" id="adminToast" role="status" aria-live="polite"></div>
+    </section>
+  </main>
+  <script src="/admin.js" defer></script>
+</body>
+</html>

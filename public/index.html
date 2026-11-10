@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#10241e">
+  <meta name="description" content="Uma surpresa especial para cada dia até o Natal.">
+  <title>Calendário Advento | Feliz Natal</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600;700&family=Parisienne&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="app-frame">
+    <section class="login-screen" id="loginScreen" aria-labelledby="loginTitle" hidden>
+      <div class="church-watermark" aria-hidden="true"></div>
+      <div class="login-ornament" aria-hidden="true">✳</div>
+      <div class="login-card">
+        <p class="eyebrow">Uma surpresa por dia</p>
+        <h1 id="loginTitle">Feliz <span>Natal</span></h1>
+        <p class="login-copy">Entre para abrir seu calendário do Advento.</p>
+        <form id="loginForm">
+          <label for="username">Usuário</label>
+          <input id="username" name="username" autocomplete="username" required>
+          <label for="password">Senha</label>
+          <input id="password" name="password" type="password" autocomplete="current-password" required>
+          <p class="form-error" id="loginError" role="alert" aria-live="polite"></p>
+          <button class="primary-button" type="submit">Entrar no calendário <span aria-hidden="true">↗</span></button>
+        </form>
+        <p class="login-footnote">Ainda não tem usuário? <a href="/criar-conta">Crie sua conta</a></p>
+      </div>
+    </section>
+
+    <section class="calendar-screen" id="calendarScreen" hidden>
+      <div class="church-watermark" aria-hidden="true"></div>
+      <div class="corner-ornament ornament-left" aria-hidden="true"><i></i><b>✳</b></div>
+      <div class="corner-ornament ornament-right" aria-hidden="true"><i></i><b>✳</b></div>
+      <header class="masthead">
+        <div class="greeting">FELIZ</div>
+        <h1>Natal</h1>
+        <p class="season-line">25 pequenos momentos para celebrar</p>
+      </header>
+      <div class="calendar-progress" aria-live="polite"><span id="progressText">Seu dezembro começa aqui</span><button id="logoutButton" class="logout-button" type="button">Sair</button></div>
+      <div class="calendar-grid" id="calendarGrid" aria-label="Calendário do Advento, dias 1 a 25"></div>
+      <footer class="calendar-footer">
+        <p>CALENDÁRIO ADVENTO</p>
+        <p>CONTAGEM REGRESSIVA PARA O NATAL</p>
+      </footer>
+    </section>
+  </main>
+
+  <dialog class="gift-dialog" id="giftDialog" aria-labelledby="giftTitle">
+    <button class="dialog-close" id="dialogClose" type="button" aria-label="Fechar">×</button>
+    <div class="dialog-snow" aria-hidden="true">✳</div>
+    <p class="dialog-kicker" id="dialogKicker">Dia 1 de dezembro</p>
+    <h2 id="giftTitle">Uma surpresa para você</h2>
+    <div class="gift-content" id="giftContent"></div>
+  </dialog>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="/app.js" defer></script>
+</body>
+</html>

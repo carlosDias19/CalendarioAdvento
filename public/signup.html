@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#10241e">
+  <meta name="description" content="Crie seu acesso para participar do Calendário Advento.">
+  <title>Crie sua conta | Calendário Advento</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600;700&family=Parisienne&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="app-frame">
+    <section class="login-screen" aria-labelledby="signupTitle">
+      <div class="church-watermark" aria-hidden="true"></div>
+      <div class="login-ornament" aria-hidden="true">✳</div>
+      <div class="login-card">
+        <p class="eyebrow">Seu dezembro especial</p>
+        <h1 id="signupTitle">Feliz <span>Natal</span></h1>
+        <p class="login-copy">Crie seu usuário para entrar no calendário.</p>
+        <form id="signupForm">
+          <label for="username">Nome de usuário</label>
+          <input id="username" name="username" autocomplete="username" minlength="3" maxlength="32" required>
+          <p class="signup-hint">De 3 a 32 caracteres: letras, números, ponto, hífen ou sublinhado.</p>
+          <label for="password">Senha</label>
+          <input id="password" name="password" type="password" autocomplete="new-password" minlength="8" required>
+          <label for="confirmPassword">Confirme sua senha</label>
+          <input id="confirmPassword" name="confirmPassword" type="password" autocomplete="new-password" minlength="8" required>
+          <p class="signup-hint">Use pelo menos 8 caracteres.</p>
+          <p class="form-error" id="signupError" role="alert" aria-live="polite"></p>
+          <button class="primary-button" type="submit">Criar meu usuário <span aria-hidden="true">↗</span></button>
+        </form>
+        <p class="login-footnote"><a href="/">Já tem uma conta? Entre por aqui</a></p>
+      </div>
+    </section>
+  </main>
+  <script src="/signup.js" defer></script>
+</body>
+</html>
