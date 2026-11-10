@@ -1,11 +1,12 @@
 require('dotenv').config();
 
 const crypto = require('node:crypto');
-const fs = require('node:fs');
 const path = require('node:path');
 const express = require('express');
 const session = require('express-session');
-const Database = require('better-sqlite3');
+const { Pool } = require('pg');
+const connectPgSimple = require('connect-pg-simple');
+const { createClient } = require('@supabase/supabase-js');
 const bcrypt = require('bcryptjs');
 const multer = require('multer');
 const QRCode = require('qrcode');
@@ -15,102 +16,38 @@ const { csrfSync } = require('csrf-sync');
 const app = express();
 const port = Number(process.env.PORT) || 3000;
 const root = __dirname;
-const dataDir = path.resolve(process.env.DATA_DIR || path.join(root, 'data'));
-const uploadDir = path.resolve(process.env.UPLOAD_DIR || path.join(root, 'uploads'));
-fs.mkdirSync(dataDir, { recursive: true });
-fs.mkdirSync(uploadDir, { recursive: true });
-const secretPath = path.join(dataDir, 'session-secret');
-const sessionSecret = process.env.SESSION_SECRET || (fs.existsSync(secretPath)
-  ? fs.readFileSync(secretPath, 'utf8').trim()
-  : crypto.randomBytes(48).toString('base64url'));
-if (!process.env.SESSION_SECRET && !fs.existsSync(secretPath)) fs.writeFileSync(secretPath, sessionSecret, { mode: 0o600 });
-
-const db = new Database(path.join(dataDir, 'advento.sqlite'));
-db.pragma('journal_mode = WAL');
-db.pragma('foreign_keys = ON');
-db.exec(`
-  CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT NOT NULL UNIQUE,
-    password_hash TEXT NOT NULL,
-    role TEXT NOT NULL DEFAULT 'user' CHECK(role IN ('user', 'admin')),
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-  );
-  CREATE TABLE IF NOT EXISTS days (
-    day INTEGER PRIMARY KEY CHECK(day BETWEEN 1 AND 25),
-    type TEXT NOT NULL,
-    reference TEXT NOT NULL DEFAULT '',
-    title TEXT NOT NULL DEFAULT '',
-    content TEXT NOT NULL DEFAULT '',
-    media_url TEXT NOT NULL DEFAULT '',
-    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-  );
-  CREATE TABLE IF NOT EXISTS progress (
-    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    day INTEGER NOT NULL REFERENCES days(day) ON DELETE CASCADE,
-    opened_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY(user_id, day)
-  );
-  CREATE TABLE IF NOT EXISTS activity_logs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT NOT NULL,
-    role TEXT NOT NULL,
-    action TEXT NOT NULL CHECK(action IN ('login', 'open_day')),
-    day INTEGER,
-    occurred_at TEXT NOT NULL
-  );
-  CREATE INDEX IF NOT EXISTS activity_logs_occurred_at_idx ON activity_logs(occurred_at DESC);
-  CREATE TABLE IF NOT EXISTS sessions (
-    sid TEXT PRIMARY KEY,
-    sess TEXT NOT NULL,
-    expires INTEGER NOT NULL
-  );
-`);
-if (!db.prepare('SELECT 1 FROM activity_logs LIMIT 1').get()) {
-  db.prepare(`
-    INSERT INTO activity_logs (username, role, action, day, occurred_at)
-    SELECT users.username, users.role, 'open_day', progress.day,
-      strftime('%Y-%m-%dT%H:%M:%fZ', progress.opened_at)
-    FROM progress
-    JOIN users ON users.id = progress.user_id
-  `).run();
+const sessionSecret = process.env.SESSION_SECRET;
+const supabaseUrl = process.env.SUPABASE_URL?.replace(/\/$/, '');
+const storageBucket = process.env.SUPABASE_STORAGE_BUCKET || 'calendario-advento';
+const videoLimit = 50 * 1024 * 1024;
+const missingEnvironment = ['DATABASE_URL', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'SESSION_SECRET']
+  .filter((name) => !process.env[name]);
+if (missingEnvironment.length) throw new Error(`Configure as variáveis: ${missingEnvironment.join(', ')}.`);
+if (process.env.NODE_ENV === 'production' && !process.env.ADMIN_PASSWORD) {
+  throw new Error('Configure ADMIN_PASSWORD para criar o primeiro acesso administrativo.');
 }
 
-class BetterSqliteSessionStore extends session.Store {
-  get(sid, callback) {
-    try {
-      const row = db.prepare('SELECT sess, expires FROM sessions WHERE sid = ?').get(sid);
-      if (!row) return callback(null, null);
-      if (row.expires <= Date.now()) {
-        db.prepare('DELETE FROM sessions WHERE sid = ?').run(sid);
-        return callback(null, null);
-      }
-      callback(null, JSON.parse(row.sess));
-    } catch (error) { callback(error); }
-  }
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  max: 5,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 10000,
+  ssl: { rejectUnauthorized: false }
+});
+const supabase = createClient(supabaseUrl, process.env.SUPABASE_SERVICE_ROLE_KEY, {
+  auth: { autoRefreshToken: false, persistSession: false }
+});
+const PgSessionStore = connectPgSimple(session);
 
-  set(sid, sessionData, callback) {
-    try {
-      const cookie = sessionData.cookie || {};
-      const expires = cookie.expires ? new Date(cookie.expires).getTime() : Date.now() + (cookie.maxAge || 86400000);
-      db.prepare('INSERT INTO sessions (sid, sess, expires) VALUES (?, ?, ?) ON CONFLICT(sid) DO UPDATE SET sess = excluded.sess, expires = excluded.expires')
-        .run(sid, JSON.stringify(sessionData), expires);
-      if (callback) callback(null);
-    } catch (error) { if (callback) callback(error); }
-  }
-
-  destroy(sid, callback) {
-    try {
-      db.prepare('DELETE FROM sessions WHERE sid = ?').run(sid);
-      if (callback) callback(null);
-    } catch (error) { if (callback) callback(error); }
-  }
-
-  touch(sid, sessionData, callback) {
-    this.set(sid, sessionData, callback);
-  }
+function asyncHandler(handler) {
+  return (req, res, next) => Promise.resolve(handler(req, res, next)).catch(next);
 }
-setInterval(() => db.prepare('DELETE FROM sessions WHERE expires <= ?').run(Date.now()), 6 * 60 * 60 * 1000).unref();
+
+function regenerateSession(req) {
+  return new Promise((resolve, reject) => {
+    req.session.regenerate((error) => error ? reject(error) : resolve());
+  });
+}
 
 const initialDays = [
   ['verse', 'Isaías 9:6', '', 'Porque um menino nos nasceu, um filho se nos deu, e o principado estará sobre os seus ombros, e se chamará o seu nome: Maravilhoso, Conselheiro, Deus Forte, Pai da Eternidade, Príncipe da Paz.'],
@@ -139,25 +76,96 @@ const initialDays = [
   ['music', '', '', ''],
   ['verse', 'João 3:16', '', 'Porque Deus amou o mundo de tal maneira que deu o seu Filho unigênito, para que todo aquele que nele crê não pereça, mas tenha a vida eterna.']
 ];
-const insertDay = db.prepare('INSERT OR IGNORE INTO days (day, type, reference, title, content) VALUES (?, ?, ?, ?, ?)');
-initialDays.forEach((day, index) => insertDay.run(index + 1, ...day));
+async function initializeDatabase() {
+  await pool.query(`
+    CREATE SCHEMA IF NOT EXISTS app_private;
+    REVOKE ALL ON SCHEMA app_private FROM PUBLIC, anon, authenticated;
+    CREATE TABLE IF NOT EXISTS app_private.users (
+      id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+      username TEXT NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT 'user' CHECK(role IN ('user', 'admin')),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS app_private.days (
+      day INTEGER PRIMARY KEY CHECK(day BETWEEN 1 AND 25),
+      type TEXT NOT NULL,
+      reference TEXT NOT NULL DEFAULT '',
+      title TEXT NOT NULL DEFAULT '',
+      content TEXT NOT NULL DEFAULT '',
+      media_url TEXT NOT NULL DEFAULT '',
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS app_private.progress (
+      user_id BIGINT NOT NULL REFERENCES app_private.users(id) ON DELETE CASCADE,
+      day INTEGER NOT NULL REFERENCES app_private.days(day) ON DELETE CASCADE,
+      opened_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY(user_id, day)
+    );
+    CREATE TABLE IF NOT EXISTS app_private.activity_logs (
+      id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+      username TEXT NOT NULL,
+      role TEXT NOT NULL,
+      action TEXT NOT NULL CHECK(action IN ('login', 'open_day')),
+      day INTEGER,
+      occurred_at TIMESTAMPTZ NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS activity_logs_occurred_at_idx ON app_private.activity_logs(occurred_at DESC);
+    CREATE TABLE IF NOT EXISTS app_private.sessions (
+      sid varchar NOT NULL PRIMARY KEY,
+      sess json NOT NULL,
+      expire timestamp(6) NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS sessions_expire_idx ON app_private.sessions(expire);
+  `);
 
-const adminUsername = process.env.ADMIN_USERNAME || 'admin';
-if (!db.prepare("SELECT id FROM users WHERE role = 'admin' LIMIT 1").get()) {
-  const adminPassword = process.env.ADMIN_PASSWORD || crypto.randomBytes(18).toString('base64url');
-  db.prepare('INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)').run(adminUsername, bcrypt.hashSync(adminPassword, 12), 'admin');
-  if (process.env.ADMIN_PASSWORD) {
-    console.log(`Acesso inicial do administrador criado para "${adminUsername}" com a senha definida na configuração do serviço.`);
-  } else {
-    console.log(`Acesso inicial do administrador: usuário "${adminUsername}" e senha "${adminPassword}". Altere a senha no painel.`);
+  for (const [index, day] of initialDays.entries()) {
+    await pool.query(
+      'INSERT INTO app_private.days (day, type, reference, title, content) VALUES ($1, $2, $3, $4, $5) ON CONFLICT(day) DO NOTHING',
+      [index + 1, ...day]
+    );
   }
+
+  await pool.query(`
+    INSERT INTO app_private.activity_logs (username, role, action, day, occurred_at)
+    SELECT users.username, users.role, 'open_day', progress.day, progress.opened_at
+    FROM app_private.progress AS progress
+    JOIN app_private.users AS users ON users.id = progress.user_id
+    WHERE NOT EXISTS (SELECT 1 FROM app_private.activity_logs)
+  `);
+
+  const { rows } = await pool.query("SELECT id FROM app_private.users WHERE role = 'admin' LIMIT 1");
+  if (!rows.length) {
+    const adminUsername = process.env.ADMIN_USERNAME || 'admin';
+    const adminPassword = process.env.ADMIN_PASSWORD || crypto.randomBytes(18).toString('base64url');
+    await pool.query(
+      'INSERT INTO app_private.users (username, password_hash, role) VALUES ($1, $2, $3)',
+      [adminUsername, bcrypt.hashSync(adminPassword, 12), 'admin']
+    );
+    if (process.env.ADMIN_PASSWORD) {
+      console.log(`Acesso inicial do administrador criado para "${adminUsername}" usando ADMIN_PASSWORD.`);
+    } else {
+      console.log(`Acesso inicial do administrador: usuário "${adminUsername}" e senha "${adminPassword}". Altere a senha no painel.`);
+    }
+  }
+}
+
+async function initializeStorage() {
+  const { data: buckets, error: listError } = await supabase.storage.listBuckets();
+  if (listError) throw new Error(`Não foi possível acessar o Supabase Storage: ${listError.message}`);
+  const bucket = buckets.find((item) => item.name === storageBucket);
+  const options = { public: true, fileSizeLimit: videoLimit, allowedMimeTypes: ['video/mp4', 'audio/mpeg'] };
+  const result = bucket
+    ? await supabase.storage.updateBucket(storageBucket, options)
+    : await supabase.storage.createBucket(storageBucket, options);
+  if (result.error) throw new Error(`Não foi possível configurar o bucket ${storageBucket}: ${result.error.message}`);
 }
 
 app.set('trust proxy', 1);
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: false }));
 app.use(session({
-  store: new BetterSqliteSessionStore(),
+  store: new PgSessionStore({ pool, schemaName: 'app_private', tableName: 'sessions', createTableIfMissing: false }),
   secret: sessionSecret,
   resave: false,
   saveUninitialized: false,
@@ -193,16 +201,16 @@ const registrationLimiter = rateLimit({
   message: { error: 'Muitas contas foram criadas deste endereço. Tente novamente mais tarde.' }
 });
 const upload = multer({
-  storage: multer.diskStorage({
-    destination: (_req, _file, callback) => callback(null, uploadDir),
-    filename: (_req, file, callback) => callback(null, `${crypto.randomUUID()}${path.extname(file.originalname).toLowerCase()}`)
-  }),
-  limits: { fileSize: 200 * 1024 * 1024, files: 1 },
+  storage: multer.memoryStorage(),
+  limits: { fileSize: videoLimit, files: 1 },
   fileFilter: (_req, file, callback) => {
     const ext = path.extname(file.originalname).toLowerCase();
     const validVideo = ext === '.mp4' && file.mimetype === 'video/mp4';
     const validAudio = ext === '.mp3' && ['audio/mpeg', 'audio/mp3', 'application/octet-stream'].includes(file.mimetype);
-    callback(validVideo || validAudio ? null : new Error('Envie um arquivo MP4 para vídeo ou MP3 para música.'), validVideo || validAudio);
+    if (validVideo || validAudio) return callback(null, true);
+    const error = new Error('Envie um arquivo MP4 para vídeo ou MP3 para música.');
+    error.status = 400;
+    callback(error, false);
   }
 });
 
@@ -224,35 +232,42 @@ function requireAdmin(req, res, next) {
 function publicDay(day) {
   return { day: day.day, type: day.type, opened: Boolean(day.opened), available: day.day <= currentAdventDay() };
 }
-function getDay(number) {
-  return db.prepare('SELECT * FROM days WHERE day = ?').get(number);
+async function getDay(number) {
+  const { rows } = await pool.query('SELECT * FROM app_private.days WHERE day = $1', [number]);
+  return rows[0];
 }
-function cleanupMedia(url) {
-  if (url && url.startsWith('/uploads/')) {
-    const file = path.basename(url);
-    try { fs.unlinkSync(path.join(uploadDir, file)); } catch {}
-  }
+async function cleanupMedia(mediaUrl) {
+  if (!mediaUrl) return;
+  let parsedUrl;
+  try { parsedUrl = new URL(mediaUrl); } catch { return; }
+  const prefix = `/storage/v1/object/public/${storageBucket}/`;
+  if (parsedUrl.origin !== new URL(supabaseUrl).origin || !parsedUrl.pathname.startsWith(prefix)) return;
+  const objectPath = decodeURIComponent(parsedUrl.pathname.slice(prefix.length));
+  if (!objectPath) return;
+  const { error } = await supabase.storage.from(storageBucket).remove([objectPath]);
+  if (error) throw new Error(`Não foi possível remover a mídia anterior: ${error.message}`);
 }
-function recordActivity(user, action, day = null) {
-  db.prepare('INSERT INTO activity_logs (username, role, action, day, occurred_at) VALUES (?, ?, ?, ?, ?)')
-    .run(user.username, user.role, action, day, new Date().toISOString());
+async function recordActivity(user, action, day = null) {
+  await pool.query(
+    'INSERT INTO app_private.activity_logs (username, role, action, day, occurred_at) VALUES ($1, $2, $3, $4, $5)',
+    [user.username, user.role, action, day, new Date().toISOString()]
+  );
 }
 
 app.get('/api/session', (req, res) => {
   res.json({ authenticated: Boolean(req.session.user), user: req.session.user ? { username: req.session.user.username, role: req.session.user.role } : null, serverDate: saoPauloDate() });
 });
-app.post('/api/login', loginLimiter, (req, res) => {
+app.post('/api/login', loginLimiter, asyncHandler(async (req, res) => {
   const { username, password } = req.body || {};
-  const user = db.prepare("SELECT * FROM users WHERE username = ? AND role = 'user'").get(String(username || '').trim());
+  const { rows } = await pool.query("SELECT * FROM app_private.users WHERE username = $1 AND role = 'user'", [String(username || '').trim()]);
+  const user = rows[0];
   if (!user || !bcrypt.compareSync(String(password || ''), user.password_hash)) return res.status(401).json({ error: 'Não foi possível entrar. Confira seu usuário e sua senha.' });
-  req.session.regenerate((error) => {
-    if (error) return res.status(500).json({ error: 'Não foi possível iniciar sua sessão.' });
-    req.session.user = { id: user.id, username: user.username, role: user.role };
-    recordActivity(req.session.user, 'login');
-    res.json({ ok: true });
-  });
-});
-app.post('/api/register', registrationLimiter, (req, res) => {
+  await regenerateSession(req);
+  req.session.user = { id: user.id, username: user.username, role: user.role };
+  await recordActivity(req.session.user, 'login');
+  res.json({ ok: true });
+}));
+app.post('/api/register', registrationLimiter, asyncHandler(async (req, res) => {
   const username = String(req.body?.username || '').trim();
   const password = String(req.body?.password || '');
   if (!/^[\p{L}\p{N}_.-]{3,32}$/u.test(username)) {
@@ -261,122 +276,151 @@ app.post('/api/register', registrationLimiter, (req, res) => {
   if (password.length < 8) return res.status(400).json({ error: 'Sua senha precisa ter pelo menos 8 caracteres.' });
   let userId;
   try {
-    const result = db.prepare("INSERT INTO users (username, password_hash, role) VALUES (?, ?, 'user')").run(username, bcrypt.hashSync(password, 12));
-    userId = result.lastInsertRowid;
-  } catch {
+    const result = await pool.query(
+      "INSERT INTO app_private.users (username, password_hash, role) VALUES ($1, $2, 'user') RETURNING id",
+      [username, bcrypt.hashSync(password, 12)]
+    );
+    userId = result.rows[0].id;
+  } catch (error) {
+    if (error.code !== '23505') throw error;
     return res.status(409).json({ error: 'Esse nome de usuário já está em uso. Escolha outro.' });
   }
-  req.session.regenerate((error) => {
-    if (error) return res.status(500).json({ error: 'Sua conta foi criada, mas não foi possível iniciar a sessão. Entre com os dados para continuar.' });
-    req.session.user = { id: userId, username, role: 'user' };
-    recordActivity(req.session.user, 'login');
-    res.status(201).json({ ok: true });
-  });
-});
-app.post('/api/admin/login', loginLimiter, (req, res) => {
+  await regenerateSession(req);
+  req.session.user = { id: userId, username, role: 'user' };
+  await recordActivity(req.session.user, 'login');
+  res.status(201).json({ ok: true });
+}));
+app.post('/api/admin/login', loginLimiter, asyncHandler(async (req, res) => {
   const { username, password } = req.body || {};
-  const user = db.prepare("SELECT * FROM users WHERE username = ? AND role = 'admin'").get(String(username || '').trim());
+  const { rows } = await pool.query("SELECT * FROM app_private.users WHERE username = $1 AND role = 'admin'", [String(username || '').trim()]);
+  const user = rows[0];
   if (!user || !bcrypt.compareSync(String(password || ''), user.password_hash)) return res.status(401).json({ error: 'Acesso não reconhecido. Confira os dados e tente novamente.' });
-  req.session.regenerate((error) => {
-    if (error) return res.status(500).json({ error: 'Não foi possível iniciar sua sessão.' });
-    req.session.user = { id: user.id, username: user.username, role: user.role };
-    recordActivity(req.session.user, 'login');
-    res.json({ ok: true });
-  });
-});
-app.post('/api/logout', (req, res) => req.session.destroy(() => res.json({ ok: true })));
-app.get('/api/days', requireUser, (req, res) => {
-  const opened = new Set(db.prepare('SELECT day FROM progress WHERE user_id = ?').all(req.session.user.id).map((row) => row.day));
-  res.json(db.prepare('SELECT day, type FROM days ORDER BY day').all().map((day) => publicDay({ ...day, opened: opened.has(day.day) })));
-});
-app.post('/api/days/:number/open', requireUser, (req, res) => {
+  await regenerateSession(req);
+  req.session.user = { id: user.id, username: user.username, role: user.role };
+  await recordActivity(req.session.user, 'login');
+  res.json({ ok: true });
+}));
+app.post('/api/logout', (req, res, next) => req.session.destroy((error) => error ? next(error) : res.json({ ok: true })));
+app.get('/api/days', requireUser, asyncHandler(async (req, res) => {
+  const [progress, days] = await Promise.all([
+    pool.query('SELECT day FROM app_private.progress WHERE user_id = $1', [req.session.user.id]),
+    pool.query('SELECT day, type FROM app_private.days ORDER BY day')
+  ]);
+  const opened = new Set(progress.rows.map((row) => row.day));
+  res.json(days.rows.map((day) => publicDay({ ...day, opened: opened.has(day.day) })));
+}));
+app.post('/api/days/:number/open', requireUser, asyncHandler(async (req, res) => {
   const number = Number(req.params.number);
-  const day = getDay(number);
+  const day = await getDay(number);
   if (!day) return res.status(404).json({ error: 'Este dia não foi encontrado.' });
   if (number > currentAdventDay()) return res.status(403).json({ error: `Calma! Este presente só abre no dia ${number} de dezembro.` });
-  db.prepare('INSERT OR IGNORE INTO progress (user_id, day) VALUES (?, ?)').run(req.session.user.id, number);
-  recordActivity(req.session.user, 'open_day', number);
+  await pool.query('INSERT INTO app_private.progress (user_id, day) VALUES ($1, $2) ON CONFLICT(user_id, day) DO NOTHING', [req.session.user.id, number]);
+  await recordActivity(req.session.user, 'open_day', number);
   res.json(day);
-});
-app.get('/api/days/:number/qr', requireUser, async (req, res) => {
+}));
+app.get('/api/days/:number/qr', requireUser, asyncHandler(async (req, res) => {
   const number = Number(req.params.number);
-  const day = getDay(number);
-  const opened = db.prepare('SELECT 1 FROM progress WHERE user_id = ? AND day = ?').get(req.session.user.id, number);
+  const day = await getDay(number);
+  const { rows: openedRows } = await pool.query('SELECT 1 FROM app_private.progress WHERE user_id = $1 AND day = $2', [req.session.user.id, number]);
+  const opened = openedRows[0];
   if (!day || !opened || day.type !== 'music' || !day.media_url) return res.status(404).json({ error: 'QR Code indisponível.' });
-  const qrTarget = day.media_url.startsWith('/uploads/') ? `${process.env.PUBLIC_URL || `${req.protocol}://${req.get('host')}`}${day.media_url}` : day.media_url;
+  const qrTarget = day.media_url;
   try { res.json({ dataUrl: await QRCode.toDataURL(qrTarget, { width: 220, margin: 1, color: { dark: '#10241e', light: '#ffffff' } }) }); }
   catch { res.status(500).json({ error: 'Não foi possível gerar o QR Code.' }); }
-});
+}));
 
-app.get('/api/admin/days', requireAdmin, (_req, res) => res.json(db.prepare('SELECT * FROM days ORDER BY day').all()));
-app.put('/api/admin/days/:number', requireAdmin, (req, res) => {
+app.get('/api/admin/days', requireAdmin, asyncHandler(async (_req, res) => {
+  const { rows } = await pool.query('SELECT * FROM app_private.days ORDER BY day');
+  res.json(rows);
+}));
+app.put('/api/admin/days/:number', requireAdmin, asyncHandler(async (req, res) => {
   const number = Number(req.params.number);
   const { type, reference = '', title = '', content = '', media_url = '' } = req.body || {};
-  if (!getDay(number)) return res.status(404).json({ error: 'Dia não encontrado.' });
+  if (!await getDay(number)) return res.status(404).json({ error: 'Dia não encontrado.' });
   if (!['verse', 'challenge', 'video', 'music'].includes(type)) return res.status(400).json({ error: 'Escolha um tipo de conteúdo válido.' });
   const mediaUrl = String(media_url).trim();
   const validRemoteUrl = /^https:\/\//i.test(mediaUrl);
-  const validUploadedFile = /^\/uploads\/[\w-]+\.(mp4|mp3)$/i.test(mediaUrl);
-  if (mediaUrl && !validRemoteUrl && !validUploadedFile) return res.status(400).json({ error: 'Use um link HTTPS válido ou envie um arquivo de mídia.' });
-  db.prepare('UPDATE days SET type = ?, reference = ?, title = ?, content = ?, media_url = ?, updated_at = CURRENT_TIMESTAMP WHERE day = ?').run(type, String(reference).slice(0, 160), String(title).slice(0, 160), String(content).slice(0, 10000), mediaUrl.slice(0, 1000), number);
-  res.json(getDay(number));
-});
-app.post('/api/admin/days/:number/media', requireAdmin, upload.single('media'), (req, res) => {
+  if (mediaUrl && !validRemoteUrl) return res.status(400).json({ error: 'Use um link HTTPS válido ou envie um arquivo de mídia.' });
+  const { rows } = await pool.query(
+    'UPDATE app_private.days SET type = $1, reference = $2, title = $3, content = $4, media_url = $5, updated_at = CURRENT_TIMESTAMP WHERE day = $6 RETURNING *',
+    [type, String(reference).slice(0, 160), String(title).slice(0, 160), String(content).slice(0, 10000), mediaUrl.slice(0, 1000), number]
+  );
+  res.json(rows[0]);
+}));
+app.post('/api/admin/days/:number/media', requireAdmin, upload.single('media'), asyncHandler(async (req, res) => {
   const number = Number(req.params.number);
-  const day = getDay(number);
-  if (!day) { if (req.file) fs.unlinkSync(req.file.path); return res.status(404).json({ error: 'Dia não encontrado.' }); }
+  const day = await getDay(number);
+  if (!day) return res.status(404).json({ error: 'Dia não encontrado.' });
   if (!req.file) return res.status(400).json({ error: 'Escolha um arquivo para enviar.' });
   const extension = path.extname(req.file.originalname).toLowerCase();
   if ((day.type === 'video' && extension !== '.mp4') || (day.type === 'music' && extension !== '.mp3') || (day.type !== 'video' && day.type !== 'music')) {
-    fs.unlinkSync(req.file.path);
     return res.status(400).json({ error: 'O formato do arquivo não corresponde ao tipo de conteúdo deste dia.' });
   }
   if (extension === '.mp3' && req.file.size > 30 * 1024 * 1024) {
-    fs.unlinkSync(req.file.path);
     return res.status(413).json({ error: 'O arquivo de música ultrapassa o limite de 30 MB.' });
   }
-  cleanupMedia(day.media_url);
-  const mediaUrl = `/uploads/${req.file.filename}`;
-  db.prepare('UPDATE days SET media_url = ?, updated_at = CURRENT_TIMESTAMP WHERE day = ?').run(mediaUrl, number);
+  const objectName = `${crypto.randomUUID()}${extension}`;
+  const contentType = extension === '.mp4' ? 'video/mp4' : 'audio/mpeg';
+  const { error: uploadError } = await supabase.storage.from(storageBucket).upload(objectName, req.file.buffer, { contentType, upsert: false });
+  if (uploadError) throw new Error(`O Supabase Storage recusou o arquivo: ${uploadError.message}`);
+  const { data } = supabase.storage.from(storageBucket).getPublicUrl(objectName);
+  const mediaUrl = data.publicUrl;
+  try {
+    await pool.query('UPDATE app_private.days SET media_url = $1, updated_at = CURRENT_TIMESTAMP WHERE day = $2', [mediaUrl, number]);
+    await cleanupMedia(day.media_url);
+  } catch (error) {
+    await supabase.storage.from(storageBucket).remove([objectName]);
+    throw error;
+  }
   res.json({ media_url: mediaUrl });
-});
-app.delete('/api/admin/days/:number/media', requireAdmin, (req, res) => {
+}));
+app.delete('/api/admin/days/:number/media', requireAdmin, asyncHandler(async (req, res) => {
   const number = Number(req.params.number);
-  const day = getDay(number);
+  const day = await getDay(number);
   if (!day) return res.status(404).json({ error: 'Dia não encontrado.' });
-  cleanupMedia(day.media_url);
-  db.prepare("UPDATE days SET media_url = '', updated_at = CURRENT_TIMESTAMP WHERE day = ?").run(number);
+  await pool.query("UPDATE app_private.days SET media_url = '', updated_at = CURRENT_TIMESTAMP WHERE day = $1", [number]);
+  await cleanupMedia(day.media_url);
   res.json({ ok: true });
-});
-app.get('/api/admin/users', requireAdmin, (_req, res) => res.json(db.prepare("SELECT id, username, created_at FROM users WHERE role = 'user' ORDER BY username").all()));
-app.get('/api/admin/activity', requireAdmin, (req, res) => {
+}));
+app.get('/api/admin/users', requireAdmin, asyncHandler(async (_req, res) => {
+  const { rows } = await pool.query("SELECT id, username, created_at FROM app_private.users WHERE role = 'user' ORDER BY username");
+  res.json(rows);
+}));
+app.get('/api/admin/activity', requireAdmin, asyncHandler(async (req, res) => {
   const action = ['login', 'open_day'].includes(req.query.type) ? req.query.type : null;
   const query = action
-    ? 'SELECT username, role, action, day, occurred_at FROM activity_logs WHERE action = ? ORDER BY id DESC LIMIT 300'
-    : 'SELECT username, role, action, day, occurred_at FROM activity_logs ORDER BY id DESC LIMIT 300';
-  res.json(action ? db.prepare(query).all(action) : db.prepare(query).all());
-});
-app.post('/api/admin/users', requireAdmin, (req, res) => {
+    ? 'SELECT username, role, action, day, occurred_at FROM app_private.activity_logs WHERE action = $1 ORDER BY id DESC LIMIT 300'
+    : 'SELECT username, role, action, day, occurred_at FROM app_private.activity_logs ORDER BY id DESC LIMIT 300';
+  const { rows } = action ? await pool.query(query, [action]) : await pool.query(query);
+  res.json(rows);
+}));
+app.post('/api/admin/users', requireAdmin, asyncHandler(async (req, res) => {
   const username = String(req.body?.username || '').trim();
   const password = String(req.body?.password || '');
   if (!/^[\p{L}\p{N}_.-]{3,32}$/u.test(username) || password.length < 8) return res.status(400).json({ error: 'Use um usuário de 3 a 32 caracteres e uma senha com pelo menos 8 caracteres.' });
   try {
-    const result = db.prepare("INSERT INTO users (username, password_hash, role) VALUES (?, ?, 'user')").run(username, bcrypt.hashSync(password, 12));
-    res.status(201).json({ id: result.lastInsertRowid, username });
-  } catch { res.status(409).json({ error: 'Já existe uma conta com esse usuário.' }); }
-});
-app.patch('/api/admin/users/:id/password', requireAdmin, (req, res) => {
+    const { rows } = await pool.query(
+      "INSERT INTO app_private.users (username, password_hash, role) VALUES ($1, $2, 'user') RETURNING id",
+      [username, bcrypt.hashSync(password, 12)]
+    );
+    res.status(201).json({ id: rows[0].id, username });
+  } catch (error) {
+    if (error.code !== '23505') throw error;
+    res.status(409).json({ error: 'Já existe uma conta com esse usuário.' });
+  }
+}));
+app.patch('/api/admin/users/:id/password', requireAdmin, asyncHandler(async (req, res) => {
   const password = String(req.body?.password || '');
   if (password.length < 8) return res.status(400).json({ error: 'A senha precisa ter pelo menos 8 caracteres.' });
-  const result = db.prepare("UPDATE users SET password_hash = ? WHERE id = ? AND role = 'user'").run(bcrypt.hashSync(password, 12), Number(req.params.id));
-  if (!result.changes) return res.status(404).json({ error: 'Conta não encontrada.' });
+  const result = await pool.query("UPDATE app_private.users SET password_hash = $1 WHERE id = $2 AND role = 'user'", [bcrypt.hashSync(password, 12), Number(req.params.id)]);
+  if (!result.rowCount) return res.status(404).json({ error: 'Conta não encontrada.' });
   res.json({ ok: true });
-});
-app.delete('/api/admin/users/:id', requireAdmin, (req, res) => {
-  const result = db.prepare("DELETE FROM users WHERE id = ? AND role = 'user'").run(Number(req.params.id));
-  if (!result.changes) return res.status(404).json({ error: 'Conta não encontrada.' });
+}));
+app.delete('/api/admin/users/:id', requireAdmin, asyncHandler(async (req, res) => {
+  const result = await pool.query("DELETE FROM app_private.users WHERE id = $1 AND role = 'user'", [Number(req.params.id)]);
+  if (!result.rowCount) return res.status(404).json({ error: 'Conta não encontrada.' });
   res.json({ ok: true });
-});
+}));
 app.post('/api/admin/test-mode', requireAdmin, (req, res) => {
   req.session.testMode = Boolean(req.body?.enabled);
   req.session.testDay = Math.max(1, Math.min(25, Number(req.body?.day) || 1));
@@ -385,24 +429,24 @@ app.post('/api/admin/test-mode', requireAdmin, (req, res) => {
 app.get('/api/admin/test-mode', requireAdmin, (req, res) => {
   res.json({ enabled: Boolean(req.session.testMode), day: req.session.testDay || 1 });
 });
-app.get('/api/admin/preview/:number', requireAdmin, (req, res) => {
+app.get('/api/admin/preview/:number', requireAdmin, asyncHandler(async (req, res) => {
   const number = Number(req.params.number);
   if (!req.session.testMode) return res.status(403).json({ error: 'Ative o modo de teste para pré-visualizar um dia.' });
-  const day = getDay(number);
+  const day = await getDay(number);
   if (!day) return res.status(404).json({ error: 'Dia não encontrado.' });
   res.json({ ...day, testMode: Boolean(req.session.testMode), previewDay: req.session.testDay });
-});
-app.patch('/api/admin/password', requireAdmin, (req, res) => {
+}));
+app.patch('/api/admin/password', requireAdmin, asyncHandler(async (req, res) => {
   const currentPassword = String(req.body?.currentPassword || '');
   const newPassword = String(req.body?.newPassword || '');
-  const admin = db.prepare("SELECT * FROM users WHERE id = ? AND role = 'admin'").get(req.session.user.id);
+  const { rows } = await pool.query("SELECT * FROM app_private.users WHERE id = $1 AND role = 'admin'", [req.session.user.id]);
+  const admin = rows[0];
   if (!bcrypt.compareSync(currentPassword, admin.password_hash)) return res.status(401).json({ error: 'A senha atual não confere.' });
   if (newPassword.length < 10) return res.status(400).json({ error: 'A nova senha precisa ter pelo menos 10 caracteres.' });
-  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(bcrypt.hashSync(newPassword, 12), admin.id);
+  await pool.query('UPDATE app_private.users SET password_hash = $1 WHERE id = $2', [bcrypt.hashSync(newPassword, 12), admin.id]);
   res.json({ ok: true });
-});
+}));
 
-app.use('/uploads', express.static(uploadDir, { fallthrough: false, maxAge: '1h' }));
 app.get('/admin.html', (req, res) => {
   if (!req.session.user || req.session.user.role !== 'admin') return res.status(404).send('Página não encontrada.');
   res.redirect('/painel-natal-admin');
@@ -414,8 +458,20 @@ app.get('/painel-natal-admin', (req, res) => {
   res.sendFile(path.join(root, 'public', 'admin.html'));
 });
 app.use((error, _req, res, _next) => {
-  const message = error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE' ? 'O arquivo ultrapassa o limite permitido.' : (error.message || 'Ocorreu um erro inesperado.');
-  res.status(error.status || 400).json({ error: message });
+  const isTooLarge = error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE';
+  const message = isTooLarge ? 'O arquivo ultrapassa o limite permitido.' : (error.status && error.status < 500 ? error.message : 'Ocorreu um erro inesperado.');
+  if (!error.status || error.status >= 500) console.error(error);
+  res.status(isTooLarge ? 413 : (error.status || 500)).json({ error: message });
 });
 
-app.listen(port, () => console.log(`Calendário Advento disponível em http://localhost:${port}`));
+async function start() {
+  await initializeDatabase();
+  await initializeStorage();
+  app.listen(port, () => console.log(`Calendário Advento disponível na porta ${port}.`));
+}
+
+start().catch(async (error) => {
+  console.error(`Não foi possível iniciar o aplicativo: ${error.message}`);
+  await pool.end();
+  process.exitCode = 1;
+});

@@ -71,7 +71,7 @@ function updateFields() {
   document.querySelector('#titleGroup').hidden = type !== 'challenge';
   document.querySelector('#textGroup').hidden = type === 'video' || type === 'music';
   document.querySelector('#mediaGroup').hidden = type !== 'video' && type !== 'music';
-  document.querySelector('#mediaHelp').textContent = type === 'video' ? 'Cole um link do YouTube ou Vimeo, ou envie um vídeo MP4 de até 200 MB.' : 'Cole um link de música ou envie um arquivo MP3 de até 30 MB.';
+  document.querySelector('#mediaHelp').textContent = type === 'video' ? 'Cole um link do YouTube ou Vimeo, ou envie um vídeo MP4 de até 50 MB.' : 'Cole um link de música ou envie um arquivo MP3 de até 30 MB.';
   mediaFile.accept = type === 'video' ? '.mp4,video/mp4' : '.mp3,audio/mpeg';
   const day = days.find((item) => item.day === selectedDay);
   const status = document.querySelector('#mediaStatus');
@@ -123,7 +123,7 @@ async function loadUsers() {
     const name = document.createElement('strong');
     name.textContent = user.username;
     const created = document.createElement('small');
-    created.textContent = `Criado em ${new Date(user.created_at.replace(' ', 'T') + 'Z').toLocaleDateString('pt-BR')}`;
+    created.textContent = `Criado em ${new Date(user.created_at).toLocaleDateString('pt-BR')}`;
     details.append(name, created);
     const actions = document.createElement('div');
     actions.className = 'user-actions';
@@ -246,9 +246,9 @@ document.querySelector('#uploadMedia').addEventListener('click', async () => {
   if (!file) { status.textContent = 'Escolha um arquivo primeiro.'; return; }
   const isVideo = contentType.value === 'video';
   const validExtension = isVideo ? /\.mp4$/i.test(file.name) : /\.mp3$/i.test(file.name);
-  const limit = isVideo ? 200 * 1024 * 1024 : 30 * 1024 * 1024;
+  const limit = isVideo ? 50 * 1024 * 1024 : 30 * 1024 * 1024;
   if (!validExtension) { status.textContent = isVideo ? 'Escolha um arquivo MP4.' : 'Escolha um arquivo MP3.'; return; }
-  if (file.size > limit) { status.textContent = `O arquivo ultrapassa o limite de ${isVideo ? '200 MB' : '30 MB'}.`; return; }
+  if (file.size > limit) { status.textContent = `O arquivo ultrapassa o limite de ${isVideo ? '50 MB' : '30 MB'}.`; return; }
   const formData = new FormData();
   formData.append('media', file);
   status.textContent = 'Enviando arquivo...';

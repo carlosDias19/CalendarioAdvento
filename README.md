@@ -1,44 +1,45 @@
 # Calendário Advento – Contagem Regressiva para o Natal
 
-Aplicação web responsiva para abrir uma surpresa por dia: versículos, desafios, vídeos e músicas. O projeto usa Node.js, Express e SQLite. Participantes podem criar a própria conta na página de cadastro; a administração também pode gerenciar os acessos pelo painel.
+Aplicação web responsiva para abrir uma surpresa por dia: versículos, desafios, vídeos e músicas. O projeto usa Node.js, Express e Supabase (PostgreSQL e Storage). Participantes podem criar a própria conta na página de cadastro; a administração também pode gerenciar os acessos pelo painel.
 
 ## Rodar no computador
 
-1. Instale o Node.js 20 ou mais recente.
+1. Instale o Node.js 22 LTS.
 2. Abra a pasta do projeto no VS Code.
-3. No terminal do VS Code, execute:
+3. Crie um projeto gratuito no Supabase e obtenha a URI do **Session Pooler**, a URL do projeto e a chave secreta de servidor. Não use a chave `publishable` no servidor.
+4. Copie `.env.example` para `.env` e preencha `DATABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SESSION_SECRET` e `ADMIN_PASSWORD`. A URL `SUPABASE_URL` já aponta para o projeto configurado.
+5. No terminal do VS Code, execute:
 
    ```powershell
-   npm install
+   npm ci
    npm start
    ```
 
-4. Abra `http://localhost:3000` no navegador.
-5. No primeiro início, o terminal mostra o usuário e uma senha aleatória para a administração. Anote a senha e entre pelo endereço `http://localhost:3000/painel-natal-admin`. Ela não é exibida novamente.
-6. Crie sua conta pela opção “Crie sua conta” na tela de entrada. O cadastro inicia a sessão automaticamente.
-7. No painel, a administração pode criar, redefinir ou excluir contas e alterar a própria senha.
+6. Abra `http://localhost:3000` no navegador.
+7. Entre no painel por `http://localhost:3000/painel-natal-admin` usando `ADMIN_USERNAME` e `ADMIN_PASSWORD`.
+8. Crie sua conta pela opção “Crie sua conta” na tela de entrada. O cadastro inicia a sessão automaticamente.
 
-Para personalizar os dados iniciais do administrador antes de iniciar pela primeira vez, copie `.env.example` para `.env` e preencha `ADMIN_USERNAME`, `ADMIN_PASSWORD` e `SESSION_SECRET` com valores próprios. A senha inicial do administrador só é aplicada quando o banco ainda não tem uma conta administrativa.
+Na primeira inicialização, o servidor cria o schema privado, as tabelas, os 25 dias iniciais, o administrador e o bucket público de mídia. A senha administrativa só é usada quando ainda não existe uma conta administrativa.
 
 Durante o desenvolvimento, use `npm run dev` para reiniciar o servidor automaticamente quando o código mudar.
 
 ## Administração
 
-O endereço do painel é `/painel-natal-admin` e não aparece como link na tela dos participantes. No painel é possível editar o tipo, os textos e a mídia dos 25 dias; enviar vídeos MP4 de até 200 MB e músicas MP3 de até 30 MB; gerenciar contas; ativar uma prévia de qualquer dia sem gravar progresso; trocar a senha administrativa; e consultar logins e aberturas de cartas recentes. As primeiras aberturas já salvas no progresso são recuperadas para o histórico; novos logins e cada reabertura passam a ser registrados a partir desta versão. Até 300 eventos aparecem na aba “Atividade”. Logins anteriores não podem ser recuperados. O cadastro público cria somente contas comuns, nunca contas administrativas.
+O endereço do painel é `/painel-natal-admin` e não aparece como link na tela dos participantes. No painel é possível editar o tipo, os textos e a mídia dos 25 dias; enviar vídeos MP4 de até 50 MB e músicas MP3 de até 30 MB; gerenciar contas; ativar uma prévia de qualquer dia sem gravar progresso; trocar a senha administrativa; e consultar logins e aberturas de cartas recentes. Até 300 eventos aparecem na aba “Atividade”. O cadastro público cria somente contas comuns, nunca contas administrativas.
 
-Os dados, sessões e progresso ficam em `data/advento.sqlite`; a chave local que mantém as sessões assinadas fica em `data/session-secret`; arquivos enviados ficam em `uploads/`. Não apague esses diretórios para manter os conteúdos, as contas e o progresso. Eles são ignorados pelo Git.
+Contas, conteúdo, progresso, atividade e sessões ficam no PostgreSQL do Supabase. Arquivos enviados ficam no bucket `calendario-advento` do Supabase Storage. Os uploads aceitam MP4 de até 50 MB e MP3 de até 30 MB; links HTTPS continuam disponíveis para mídias maiores.
 
 ## Publicar no Render
 
-O arquivo `render.yaml` prepara um serviço Node.js com disco persistente para o SQLite, sessões e arquivos enviados. O serviço com disco persistente exige um plano pago no Render; confira o preço mostrado no painel antes de confirmar. A configuração inicial usa o plano `0.5c-512mb`, um disco de 5 GB e a região Ohio. O Render fornece um endereço HTTPS `onrender.com`, que você pode usar sem comprar domínio.
+O arquivo `render.yaml` configura um serviço Web gratuito no Render, sem disco persistente. O banco, as sessões e os arquivos ficam no Supabase, então não dependem do disco temporário do Render. No plano gratuito, o serviço pode dormir quando fica sem tráfego e levar alguns segundos para acordar; Supabase e Render também aplicam limites de uso que podem mudar.
 
-1. Entre no Render e escolha criar um Blueprint conectado ao repositório `carlosDias19/CalendarioAdvento`.
-2. Na configuração solicitada pelo Blueprint, defina `ADMIN_PASSWORD` com uma senha forte e exclusiva. A chave `SESSION_SECRET` é gerada pelo Render.
-3. Revise os recursos e custos apresentados pelo Render e confirme a criação. O Blueprint define `npm ci` para instalação, `npm start` para execução e um disco persistente em `/var/data`.
-4. Aguarde o primeiro deploy ficar ativo e abra o endereço HTTPS `onrender.com` fornecido pelo Render. O usuário inicial do painel é `admin`; a senha é a que você definiu para `ADMIN_PASSWORD`.
-5. Se tiver um domínio próprio, abra as configurações do serviço no Render, adicione o domínio personalizado e configure no provedor de DNS os registros que o Render indicar. O HTTPS é provisionado pelo Render.
+1. No Supabase, abra **Connect** e copie a URI do **Session Pooler**. O host direto `db.<projeto>.supabase.co` pode não aceitar conexões IPv4 do Render gratuito. Substitua `[YOUR-PASSWORD]` pela senha do banco.
+2. Em **Project Settings → API Keys**, copie a URL do projeto e a chave secreta de servidor (`service_role` ou `sb_secret_`). Nunca use nem publique essa chave no navegador ou no Git.
+3. No Render, crie um Blueprint conectado ao repositório e selecione o `render.yaml` deste projeto.
+4. Quando o Render solicitar os valores secretos, informe a URI em `DATABASE_URL`, a chave secreta em `SUPABASE_SERVICE_ROLE_KEY` e uma senha forte em `ADMIN_PASSWORD`. `SESSION_SECRET` é gerada pelo Blueprint; a URL do Supabase já está preenchida.
+5. Aguarde o deploy e abra o endereço HTTPS `onrender.com`. Entre no painel em `/painel-natal-admin` com usuário `admin` e a senha definida no passo anterior.
 
-O `PUBLIC_URL` não é obrigatório no Render: os QR Codes usam o endereço da requisição quando a variável não está definida. O banco, as sessões e os uploads persistem no disco configurado. Não remova o disco, não rode mais de uma instância deste app com SQLite e nunca envie `.env`, o banco local ou mídia privada ao GitHub.
+As tabelas ficam no schema privado `app_private`, fora das APIs públicas do Supabase. O servidor usa a chave secreta somente no backend. A chave `publishable` fornecida pelo Supabase não é necessária neste app. Os dados que existam em uma antiga cópia SQLite local não são importados automaticamente.
 
 ## Segurança e funcionamento
 
@@ -46,5 +47,5 @@ O `PUBLIC_URL` não é obrigatório no Render: os QR Codes usam o endereço da r
 - As rotas que alteram dados usam token CSRF; tentativas de login são limitadas por endereço IP.
 - A data de liberação é calculada no servidor pelo fuso `America/Sao_Paulo`. Dias já liberados continuam acessíveis e o progresso fica salvo por conta.
 - O modo de teste exige uma sessão administrativa e não grava progresso.
-- Vídeo e áudio aceitam arquivos dos formatos esperados ou links HTTPS. Os arquivos ficam disponíveis em `/uploads`.
+- Vídeo e áudio aceitam arquivos dos formatos esperados ou links HTTPS. Os arquivos enviados ficam em um bucket público do Supabase Storage, para que o calendário possa reproduzi-los.
 - A preferência `prefers-reduced-motion` reduz as animações da interface.
