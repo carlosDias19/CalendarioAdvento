@@ -94,8 +94,10 @@ async function initializeDatabase() {
       title TEXT NOT NULL DEFAULT '',
       content TEXT NOT NULL DEFAULT '',
       media_url TEXT NOT NULL DEFAULT '',
+      force_open BOOLEAN NOT NULL DEFAULT FALSE,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
+    ALTER TABLE app_private.days ADD COLUMN IF NOT EXISTS force_open BOOLEAN NOT NULL DEFAULT FALSE;
     CREATE TABLE IF NOT EXISTS app_private.progress (
       user_id BIGINT NOT NULL REFERENCES app_private.users(id) ON DELETE CASCADE,
       day INTEGER NOT NULL REFERENCES app_private.days(day) ON DELETE CASCADE,
@@ -218,8 +220,9 @@ function saoPauloDate() {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
 }
 function currentAdventDay() {
-  const [year, month, day] = saoPauloDate().split('-').map(Number);
-  return month === 12 ? Math.min(day, 25) : 25;
+  const date = saoPauloDate();
+  if (date < '2026-12-01' || date > '2026-12-25') return null;
+  return Number(date.slice(-2));
 }
 function requireUser(req, res, next) {
   if (!req.session.user || req.session.user.role !== 'user') return res.status(401).json({ error: 'Entre com sua conta para continuar.' });
@@ -230,7 +233,8 @@ function requireAdmin(req, res, next) {
   next();
 }
 function publicDay(day) {
-  return { day: day.day, type: day.type, opened: Boolean(day.opened), available: day.day <= currentAdventDay() };
+  const opened = Boolean(day.opened);
+  return { day: day.day, type: day.type, opened, available: Boolean(day.force_open) || opened || day.day === currentAdventDay() };
 }
 async function getDay(number) {
   const { rows } = await pool.query('SELECT * FROM app_private.days WHERE day = $1', [number]);
@@ -304,7 +308,7 @@ app.post('/api/logout', (req, res, next) => req.session.destroy((error) => error
 app.get('/api/days', requireUser, asyncHandler(async (req, res) => {
   const [progress, days] = await Promise.all([
     pool.query('SELECT day FROM app_private.progress WHERE user_id = $1', [req.session.user.id]),
-    pool.query('SELECT day, type FROM app_private.days ORDER BY day')
+    pool.query('SELECT day, type, force_open FROM app_private.days ORDER BY day')
   ]);
   const opened = new Set(progress.rows.map((row) => row.day));
   res.json(days.rows.map((day) => publicDay({ ...day, opened: opened.has(day.day) })));
@@ -313,7 +317,14 @@ app.post('/api/days/:number/open', requireUser, asyncHandler(async (req, res) =>
   const number = Number(req.params.number);
   const day = await getDay(number);
   if (!day) return res.status(404).json({ error: 'Este dia não foi encontrado.' });
-  if (number > currentAdventDay()) return res.status(403).json({ error: `Calma! Este presente só abre no dia ${number} de dezembro.` });
+  const { rows: progressRows } = await pool.query(
+    'SELECT 1 FROM app_private.progress WHERE user_id = $1 AND day = $2',
+    [req.session.user.id, number]
+  );
+  const alreadyOpened = Boolean(progressRows[0]);
+  if (!day.force_open && !alreadyOpened && number !== currentAdventDay()) {
+    return res.status(403).json({ error: `Esta janela abre somente em ${String(number).padStart(2, '0')}/12/2026.` });
+  }
   await pool.query('INSERT INTO app_private.progress (user_id, day) VALUES ($1, $2) ON CONFLICT(user_id, day) DO NOTHING', [req.session.user.id, number]);
   await recordActivity(req.session.user, 'open_day', number);
   res.json(day);
@@ -332,6 +343,16 @@ app.get('/api/days/:number/qr', requireUser, asyncHandler(async (req, res) => {
 app.get('/api/admin/days', requireAdmin, asyncHandler(async (_req, res) => {
   const { rows } = await pool.query('SELECT * FROM app_private.days ORDER BY day');
   res.json(rows);
+}));
+app.patch('/api/admin/days/:number/release', requireAdmin, asyncHandler(async (req, res) => {
+  const number = Number(req.params.number);
+  const enabled = Boolean(req.body?.enabled);
+  const { rows } = await pool.query(
+    'UPDATE app_private.days SET force_open = $1, updated_at = CURRENT_TIMESTAMP WHERE day = $2 RETURNING day, force_open',
+    [enabled, number]
+  );
+  if (!rows.length) return res.status(404).json({ error: 'Dia não encontrado.' });
+  res.json(rows[0]);
 }));
 app.put('/api/admin/days/:number', requireAdmin, asyncHandler(async (req, res) => {
   const number = Number(req.params.number);

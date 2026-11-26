@@ -21,11 +21,13 @@ Aplicação web responsiva para abrir uma surpresa por dia: versículos, desafio
 
 Na primeira inicialização, o servidor cria o schema privado, as tabelas, os 25 dias iniciais, o administrador e o bucket público de mídia. A senha administrativa só é usada quando ainda não existe uma conta administrativa.
 
+Este calendário libera uma nova janela por dia, de 1 a 25 de dezembro de 2026, no fuso de São Paulo. Janelas já abertas continuam acessíveis. No painel, a administração pode liberar qualquer janela fora da data; essa liberação fica salva no Supabase e vale para todos os participantes.
+
 Durante o desenvolvimento, use `npm run dev` para reiniciar o servidor automaticamente quando o código mudar.
 
 ## Administração
 
-O endereço do painel é `/painel-natal-admin` e não aparece como link na tela dos participantes. No painel é possível editar o tipo, os textos e a mídia dos 25 dias; enviar vídeos MP4 de até 50 MB e músicas MP3 de até 30 MB; gerenciar contas; ativar uma prévia de qualquer dia sem gravar progresso; trocar a senha administrativa; e consultar logins e aberturas de cartas recentes. Até 300 eventos aparecem na aba “Atividade”. O cadastro público cria somente contas comuns, nunca contas administrativas.
+O endereço do painel é `/painel-natal-admin` e não aparece como link na tela dos participantes. No painel é possível editar o tipo, os textos e a mídia dos 25 dias; liberar manualmente qualquer janela; enviar vídeos MP4 de até 50 MB e músicas MP3 de até 30 MB; gerenciar contas; ativar uma prévia sem gravar progresso; trocar a senha administrativa; e consultar logins e aberturas recentes. Até 300 eventos aparecem na aba “Atividade”. O cadastro público cria somente contas comuns, nunca contas administrativas.
 
 Contas, conteúdo, progresso, atividade e sessões ficam no PostgreSQL do Supabase. Arquivos enviados ficam no bucket `calendario-advento` do Supabase Storage. Os uploads aceitam MP4 de até 50 MB e MP3 de até 30 MB; links HTTPS continuam disponíveis para mídias maiores.
 
@@ -45,7 +47,7 @@ As tabelas ficam no schema privado `app_private`, fora das APIs públicas do Sup
 
 - Senhas são armazenadas com bcrypt; os cookies de sessão são HTTP-only, SameSite=Lax e seguros em produção.
 - As rotas que alteram dados usam token CSRF; tentativas de login são limitadas por endereço IP.
-- A data de liberação é calculada no servidor pelo fuso `America/Sao_Paulo`. Dias já liberados continuam acessíveis e o progresso fica salvo por conta.
+- A janela do dia é liberada pelo servidor entre `2026-12-01` e `2026-12-25`, usando o fuso `America/Sao_Paulo`. Admin pode liberar dias adicionais; o progresso fica salvo por conta.
 - O modo de teste exige uma sessão administrativa e não grava progresso.
 - Vídeo e áudio aceitam arquivos dos formatos esperados ou links HTTPS. Os arquivos enviados ficam em um bucket público do Supabase Storage, para que o calendário possa reproduzi-los.
 - A preferência `prefers-reduced-motion` reduz as animações da interface.

@@ -7,6 +7,7 @@ const dayForm = document.querySelector('#dayForm');
 const contentType = document.querySelector('#contentType');
 const mediaUrl = document.querySelector('#mediaUrl');
 const mediaFile = document.querySelector('#mediaFile');
+const forceRelease = document.querySelector('#forceRelease');
 const toast = document.querySelector('#adminToast');
 let csrfToken = '';
 let selectedDay = 1;
@@ -51,7 +52,7 @@ function renderDays() {
     copy.className = 'day-list-copy';
     const type = document.createElement('span');
     type.className = 'day-list-type';
-    type.textContent = typeNames[day.type] || 'Conteúdo';
+    type.textContent = `${typeNames[day.type] || 'Conteúdo'}${day.force_open ? ' · Liberado' : ''}`;
     const preview = document.createElement('span');
     preview.className = 'day-list-preview';
     preview.textContent = shortPreview(day);
@@ -85,6 +86,7 @@ function selectDay(number) {
   selectedDay = number;
   renderDays();
   document.querySelector('#editorDayLabel').textContent = `Dia ${number}`;
+  forceRelease.checked = Boolean(day.force_open);
   contentType.value = day.type;
   document.querySelector('#reference').value = day.reference || '';
   document.querySelector('#contentTitle').value = day.title || '';
@@ -238,6 +240,25 @@ dayForm.addEventListener('submit', async (event) => {
     updateFields();
   } catch (error) { document.querySelector('#saveMessage').textContent = error.message; }
   finally { save.disabled = false; }
+});
+
+forceRelease.addEventListener('change', async () => {
+  const enabled = forceRelease.checked;
+  forceRelease.disabled = true;
+  try {
+    const updated = await api(`/api/admin/days/${selectedDay}/release`, {
+      method: 'PATCH',
+      body: JSON.stringify({ enabled })
+    });
+    days = days.map((day) => day.day === selectedDay ? { ...day, force_open: updated.force_open } : day);
+    renderDays();
+    showToast(updated.force_open ? `Janela do dia ${selectedDay} liberada.` : `Liberação extra do dia ${selectedDay} removida.`);
+  } catch (error) {
+    forceRelease.checked = !enabled;
+    showToast(error.message);
+  } finally {
+    forceRelease.disabled = false;
+  }
 });
 
 document.querySelector('#uploadMedia').addEventListener('click', async () => {

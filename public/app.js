@@ -41,20 +41,32 @@ function setScreen(isAuthenticated) {
 function createCard(dayInfo) {
   const card = document.createElement('button');
   card.type = 'button';
-  card.className = `day-card day-${dayInfo.day} ${['paper', 'gold', 'red'][((dayInfo.day * 7) + dayInfo.day) % 3]}`;
-  if ([2, 4, 7, 9, 12, 15, 17, 21, 24].includes(dayInfo.day)) card.classList.add('paper');
-  else if ([3, 6, 11, 19, 23].includes(dayInfo.day)) card.classList.add('gold');
-  else card.classList.add('red');
+  const glassVariant = ((dayInfo.day - 1) % 3) + 1;
+  card.className = `day-card day-${dayInfo.day} window-variant-${glassVariant}`;
+  card.dataset.type = dayInfo.type;
   card.setAttribute('aria-label', `Dia ${dayInfo.day}${dayInfo.opened ? ', já aberto' : ''}${!dayInfo.available ? ', bloqueado' : ''}`);
-  const art = document.createElement('span');
-  art.className = 'day-art';
-  art.setAttribute('aria-hidden', 'true');
-  art.textContent = decorations[dayInfo.day - 1];
   const number = document.createElement('span');
-  number.className = 'day-number';
+  number.className = 'window-number';
   number.textContent = String(dayInfo.day);
-  card.append(art, number);
-  if (dayInfo.opened) card.classList.add('opened');
+  const frame = document.createElement('span');
+  frame.className = 'window-frame';
+  frame.setAttribute('aria-hidden', 'true');
+  const glass = document.createElement('span');
+  glass.className = 'window-glass';
+  const decoration = document.createElement('span');
+  decoration.className = 'window-decoration';
+  decoration.textContent = decorations[dayInfo.day - 1];
+  const leftSash = document.createElement('span');
+  leftSash.className = 'window-sash window-sash-left';
+  const rightSash = document.createElement('span');
+  rightSash.className = 'window-sash window-sash-right';
+  const sill = document.createElement('span');
+  sill.className = 'window-sill';
+  const snow = document.createElement('span');
+  snow.className = 'window-snow';
+  frame.append(glass, decoration, leftSash, rightSash);
+  card.append(number, frame, sill, snow);
+  if (dayInfo.opened) card.classList.add('opened', 'lit');
   if (!dayInfo.available) {
     card.classList.add('locked');
     card.setAttribute('aria-disabled', 'true');
@@ -211,7 +223,7 @@ async function revealDay(day, card) {
   try {
     const data = await request(`/api/days/${day}/open`, { method: 'POST', body: JSON.stringify({}) });
     card.classList.remove('opening');
-    card.classList.add('opened');
+    card.classList.add('opened', 'lit');
     card.setAttribute('aria-label', `Dia ${day}, já aberto`);
     document.querySelector('#progressText').textContent = `${document.querySelectorAll('.day-card.opened').length} de 25 janelas abertas`;
     showModal(day, data);
@@ -253,6 +265,12 @@ giftDialog.addEventListener('click', (event) => { if (event.target === giftDialo
 (async function init() {
   try {
     const session = await request('/api/session');
+    if (session.serverDate) {
+      const date = new Date(`${session.serverDate}T12:00:00`);
+      const houseDate = document.querySelector('#houseDate');
+      houseDate.dateTime = session.serverDate;
+      houseDate.textContent = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'long', timeZone: 'America/Sao_Paulo' }).format(date);
+    }
     if (session.authenticated && session.user?.role === 'user') {
       setScreen(true);
       await loadCalendar();

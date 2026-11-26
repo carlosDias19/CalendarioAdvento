@@ -1,0 +1,12 @@
+{
+    "[pascal]": {
+        "files.encoding": "windows1252"
+    },
+    "[sql]": {
+        "editor.wordSeparators": "`~!$%^&*()-=+[{]}\\|;:'\",.<>/?",
+        "files.encoding": "windows1252",
+        "editor.tabSize": 2,
+        "editor.insertSpaces": true,
+        "editor.detectIndentation": true
+    }
+}
