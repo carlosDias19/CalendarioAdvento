@@ -156,7 +156,7 @@ async function initializeStorage() {
   const { data: buckets, error: listError } = await supabase.storage.listBuckets();
   if (listError) throw new Error(`Não foi possível acessar o Supabase Storage: ${listError.message}`);
   const bucket = buckets.find((item) => item.name === storageBucket);
-  const options = { public: true, fileSizeLimit: videoLimit, allowedMimeTypes: ['video/mp4', 'audio/mpeg'] };
+  const options = { public: true, fileSizeLimit: videoLimit, allowedMimeTypes: ['video/mp4', 'video/quicktime', 'audio/mpeg'] };
   const result = bucket
     ? await supabase.storage.updateBucket(storageBucket, options)
     : await supabase.storage.createBucket(storageBucket, options);
@@ -207,10 +207,11 @@ const upload = multer({
   limits: { fileSize: videoLimit, files: 1 },
   fileFilter: (_req, file, callback) => {
     const ext = path.extname(file.originalname).toLowerCase();
-    const validVideo = ext === '.mp4' && file.mimetype === 'video/mp4';
+    const validVideo = (ext === '.mp4' && file.mimetype === 'video/mp4')
+      || (ext === '.mov' && ['video/quicktime', 'application/octet-stream'].includes(file.mimetype));
     const validAudio = ext === '.mp3' && ['audio/mpeg', 'audio/mp3', 'application/octet-stream'].includes(file.mimetype);
     if (validVideo || validAudio) return callback(null, true);
-    const error = new Error('Envie um arquivo MP4 para vídeo ou MP3 para música.');
+    const error = new Error('Envie um vídeo MP4 ou MOV, ou uma música MP3.');
     error.status = 400;
     callback(error, false);
   }
@@ -374,14 +375,14 @@ app.post('/api/admin/days/:number/media', requireAdmin, upload.single('media'), 
   if (!day) return res.status(404).json({ error: 'Dia não encontrado.' });
   if (!req.file) return res.status(400).json({ error: 'Escolha um arquivo para enviar.' });
   const extension = path.extname(req.file.originalname).toLowerCase();
-  if ((day.type === 'video' && extension !== '.mp4') || (day.type === 'music' && extension !== '.mp3') || (day.type !== 'video' && day.type !== 'music')) {
+  if ((day.type === 'video' && !['.mp4', '.mov'].includes(extension)) || (day.type === 'music' && extension !== '.mp3') || (day.type !== 'video' && day.type !== 'music')) {
     return res.status(400).json({ error: 'O formato do arquivo não corresponde ao tipo de conteúdo deste dia.' });
   }
   if (extension === '.mp3' && req.file.size > 30 * 1024 * 1024) {
     return res.status(413).json({ error: 'O arquivo de música ultrapassa o limite de 30 MB.' });
   }
   const objectName = `${crypto.randomUUID()}${extension}`;
-  const contentType = extension === '.mp4' ? 'video/mp4' : 'audio/mpeg';
+  const contentType = extension === '.mp4' ? 'video/mp4' : extension === '.mov' ? 'video/quicktime' : 'audio/mpeg';
   const { error: uploadError } = await supabase.storage.from(storageBucket).upload(objectName, req.file.buffer, { contentType, upsert: false });
   if (uploadError) throw new Error(`O Supabase Storage recusou o arquivo: ${uploadError.message}`);
   const { data } = supabase.storage.from(storageBucket).getPublicUrl(objectName);

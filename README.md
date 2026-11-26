@@ -27,9 +27,9 @@ Durante o desenvolvimento, use `npm run dev` para reiniciar o servidor automatic
 
 ## Administração
 
-O endereço do painel é `/painel-natal-admin` e não aparece como link na tela dos participantes. No painel é possível editar o tipo, os textos e a mídia dos 25 dias; liberar manualmente qualquer janela; enviar vídeos MP4 de até 50 MB e músicas MP3 de até 30 MB; gerenciar contas; ativar uma prévia sem gravar progresso; trocar a senha administrativa; e consultar logins e aberturas recentes. Até 300 eventos aparecem na aba “Atividade”. O cadastro público cria somente contas comuns, nunca contas administrativas.
+O endereço do painel é `/painel-natal-admin` e não aparece como link na tela dos participantes. No painel é possível editar o tipo, os textos e a mídia dos 25 dias; liberar manualmente qualquer janela; enviar vídeos MP4 ou MOV de até 50 MB e músicas MP3 de até 30 MB; gerenciar contas; ativar uma prévia sem gravar progresso; trocar a senha administrativa; e consultar logins e aberturas recentes. Até 300 eventos aparecem na aba “Atividade”. O cadastro público cria somente contas comuns, nunca contas administrativas.
 
-Contas, conteúdo, progresso, atividade e sessões ficam no PostgreSQL do Supabase. Arquivos enviados ficam no bucket `calendario-advento` do Supabase Storage. Os uploads aceitam MP4 de até 50 MB e MP3 de até 30 MB; links HTTPS continuam disponíveis para mídias maiores.
+Contas, conteúdo, progresso, atividade e sessões ficam no PostgreSQL do Supabase. Arquivos enviados ficam no bucket `calendario-advento` do Supabase Storage. Os uploads aceitam MP4 ou MOV de até 50 MB e MP3 de até 30 MB; links HTTPS continuam disponíveis para mídias maiores.
 
 ## Publicar no Render
 
